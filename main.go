@@ -17,8 +17,12 @@ import (
 	"time"
 )
 
-func exit(code int, format string, args ...interface{}) {
+func warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, args...)
+}
+
+func exit(code int, format string, args ...interface{}) {
+	warn(format, args...)
 	os.Exit(code)
 }
 
@@ -63,21 +67,21 @@ func main() {
 
 		if *clear {
 			if err := c.clearAway(); err != nil {
-				exit(4, "Cannot clear away status: %v\n", err)
+				warn("Cannot clear away status in %s: %v\n", team, err)
 			}
 			if err := c.clearStatus(); err != nil {
-				exit(5, "Cannot clear status: %v\n", err)
+				warn("Cannot clear status in %s: %v\n", team, err)
 			}
 		}
 
 		if *away {
 			if err := c.setAway(); err != nil {
-				exit(6, "Cannot set presence to away: %v\n", err)
+				warn("Cannot set presence to away in %s: %v\n", team, err)
 			}
 		}
 		if *emoji != "" || *text != "" {
 			if err := c.setStatus(*emoji, *text); err != nil {
-				exit(7, "Cannot set custom status: %v\n", err)
+				warn("Cannot set custom status in %s: %v\n", team, err)
 			}
 		}
 	}
