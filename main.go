@@ -145,6 +145,7 @@ func (c client) do(method string, values url.Values) error {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Content-Charset", "utf-8")
+	req.Header.Set("User-Agent", "slacker/0.0.1")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
