@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -51,40 +52,50 @@ func main() {
 		exit(1, "Failure to read configuration file: %v\n", err)
 	}
 
+	var wg sync.WaitGroup
+
 	for team, token := range tokens {
-		if skipTeam(team) {
+		wg.Add(1)
+
+		go func(team, token string) {
+			defer wg.Done()
+
+			if skipTeam(team) {
+				if *debug {
+					fmt.Println("Skipping", team)
+				}
+				return
+			}
+
+			c := client{token}
+
 			if *debug {
-				fmt.Println("Skipping", team)
+				fmt.Println("Updating", team)
 			}
-			continue
-		}
 
-		c := client{token}
+			if *clear {
+				if err := c.clearAway(); err != nil {
+					warn("Cannot clear away status in %s: %v\n", team, err)
+				}
+				if err := c.clearStatus(); err != nil {
+					warn("Cannot clear status in %s: %v\n", team, err)
+				}
+			}
 
-		if *debug {
-			fmt.Println("Updating", team)
-		}
-
-		if *clear {
-			if err := c.clearAway(); err != nil {
-				warn("Cannot clear away status in %s: %v\n", team, err)
+			if *away {
+				if err := c.setAway(); err != nil {
+					warn("Cannot set presence to away in %s: %v\n", team, err)
+				}
 			}
-			if err := c.clearStatus(); err != nil {
-				warn("Cannot clear status in %s: %v\n", team, err)
+			if *emoji != "" || *text != "" {
+				if err := c.setStatus(*emoji, *text); err != nil {
+					warn("Cannot set custom status in %s: %v\n", team, err)
+				}
 			}
-		}
-
-		if *away {
-			if err := c.setAway(); err != nil {
-				warn("Cannot set presence to away in %s: %v\n", team, err)
-			}
-		}
-		if *emoji != "" || *text != "" {
-			if err := c.setStatus(*emoji, *text); err != nil {
-				warn("Cannot set custom status in %s: %v\n", team, err)
-			}
-		}
+		}(team, token)
 	}
+
+	wg.Wait()
 }
 
 func readConfig(file string) (map[string]string, error) {
