@@ -24,12 +24,14 @@ func warn(format string, args ...interface{}) {
 
 func exit(code int, format string, args ...interface{}) {
 	warn(format, args...)
+	fmt.Fprintln(os.Stderr)
 	os.Exit(code)
 }
 
 func main() {
 	var (
 		away    = flag.Bool("away", false, "Set yourself away")
+		online  = flag.Bool("online", false, "Set yourself online")
 		emoji   = flag.String("emoji", "", "Set status emoji")
 		text    = flag.String("text", "", "Set status text")
 		clear   = flag.Bool("clear", false, "Clears your away and custom status")
@@ -38,18 +40,21 @@ func main() {
 	)
 	flag.Parse()
 
-	if !(*clear || *away || *emoji != "" || *text != "") {
+	if !(*clear || *away || *online || *emoji != "" || *text != "") {
 		flag.Usage()
 		exit(3, "")
 	}
 
-	if *clear && (*away || *emoji != "" || *text != "") {
+	if *clear && (*emoji != "" || *text != "") {
 		exit(3, "-clear cannot be used with -away, -text or -emoji")
 	}
+	if *online && *away {
+		exit(3, "-online and -away are mutually exclusive")
+	}
 
-	tokens, err := readConfig(*cfgFile)
+	tokens, err := getTokens(*cfgFile)
 	if err != nil {
-		exit(1, "Failure to read configuration file: %v\n", err)
+		exit(1, "Failure while reading configuration file: %v\n", err)
 	}
 
 	var wg sync.WaitGroup
@@ -60,13 +65,6 @@ func main() {
 		go func(team, token string) {
 			defer wg.Done()
 
-			if skipTeam(team) {
-				if *debug {
-					fmt.Println("Skipping", team)
-				}
-				return
-			}
-
 			c := client{token}
 
 			if *debug {
@@ -74,22 +72,27 @@ func main() {
 			}
 
 			if *clear {
-				if err := c.clearAway(); err != nil {
-					warn("Cannot clear away status in %s: %v\n", team, err)
-				}
 				if err := c.clearStatus(); err != nil {
 					warn("Cannot clear status in %s: %v\n", team, err)
-				}
-			}
-
-			if *away {
-				if err := c.setAway(); err != nil {
-					warn("Cannot set presence to away in %s: %v\n", team, err)
 				}
 			}
 			if *emoji != "" || *text != "" {
 				if err := c.setStatus(*emoji, *text); err != nil {
 					warn("Cannot set custom status in %s: %v\n", team, err)
+				}
+			}
+
+			var presence string
+
+			if *online {
+				presence = "auto"
+			} else if *away {
+				presence = "away"
+			}
+
+			if presence != "" {
+				if err := c.setPresence(presence); err != nil {
+					warn("Cannot set presence to %s in %s: %v\n", presence, team, err)
 				}
 			}
 		}(team, token)
@@ -98,14 +101,29 @@ func main() {
 	wg.Wait()
 }
 
-func readConfig(file string) (map[string]string, error) {
+func getTokens(file string) (map[string]string, error) {
 	fp, err := os.Open(file)
 	if err != nil {
 		return nil, err
 	}
 	defer fp.Close()
 
-	tokens := make(map[string]string)
+	var (
+		tokens = make(map[string]string)
+		teams  = flag.Args()
+	)
+
+	includeTeam := func(team string) bool {
+		if len(teams) == 0 {
+			return true
+		}
+		for _, t := range teams {
+			if t == team {
+				return true
+			}
+		}
+		return false
+	}
 
 	for {
 		var team, token string
@@ -116,7 +134,13 @@ func readConfig(file string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		tokens[team] = token
+		if includeTeam(team) {
+			tokens[team] = token
+		}
+	}
+
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("no tokens found for teams: %v", strings.Join(teams, ", "))
 	}
 
 	return tokens, nil
@@ -135,11 +159,8 @@ type client struct {
 	Token string
 }
 
-func (c client) setAway() error {
-	return c.do("users.setPresence", url.Values{"presence": []string{"away"}})
-}
-func (c client) clearAway() error {
-	return c.do("users.setPresence", url.Values{"presence": []string{"auto"}})
+func (c client) setPresence(presence string) error {
+	return c.do("users.setPresence", url.Values{"presence": []string{presence}})
 }
 
 func (c client) setStatus(emoji, text string) error {
@@ -192,16 +213,4 @@ func (c client) do(method string, values url.Values) error {
 	}
 
 	return nil
-}
-
-func skipTeam(team string) bool {
-	if len(flag.Args()) == 0 {
-		return false
-	}
-	for _, t := range flag.Args() {
-		if t == team {
-			return false
-		}
-	}
-	return true
 }
