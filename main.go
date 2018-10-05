@@ -37,6 +37,10 @@ func main() {
 		clear   = flag.Bool("clear", false, "Clears your away and custom status")
 		cfgFile = flag.String("config", defaultConfigFile(), "Which config file to use")
 		debug   = flag.Bool("d", false, "Enable debug mode")
+
+		expiresIn  = flag.Duration("expires-in", 0, "Set a relative expiration (e.g. 1h15m30s)")
+		expiresAt  = flag.String("expires-at", "", "Set an absolute expiration")
+		expiration = int64(0)
 	)
 	flag.Parse()
 
@@ -50,6 +54,23 @@ func main() {
 	}
 	if *online && *away {
 		exit(3, "-online and -away are mutually exclusive")
+	}
+
+	if *expiresAt != "" && *expiresIn > 0 {
+		exit(4, "-expires-at and -expires-in are mutually exclusive")
+	}
+	if *expiresIn > 0 {
+		expiration = time.Now().Add(*expiresIn).Unix()
+	} else if *expiresAt != "" {
+		date, err := time.Parse("2006-01-02T15:04:05", *expiresAt)
+		if err != nil {
+			exit(5, "cannot parse ISO8601 argument %q: %v", *expiresAt, err)
+
+		}
+		expiration = date.Unix()
+	}
+	if expiration > 0 && *clear {
+		exit(6, "cannot use expiration when clearing the status")
 	}
 
 	tokens, err := getTokens(*cfgFile)
@@ -77,7 +98,7 @@ func main() {
 				}
 			}
 			if *emoji != "" || *text != "" {
-				if err := c.setStatus(*emoji, *text); err != nil {
+				if err := c.setStatus(*emoji, *text, expiration); err != nil {
 					warn("Cannot set custom status in %s: %v\n", team, err)
 				}
 			}
@@ -163,11 +184,15 @@ func (c client) setPresence(presence string) error {
 	return c.do("users.setPresence", url.Values{"presence": []string{presence}})
 }
 
-func (c client) setStatus(emoji, text string) error {
-	profile := fmt.Sprintf(`{"status_text":%q,"status_emoji":%q}`, text, emoji)
+func (c client) setStatus(emoji, text string, expiration int64) error {
+	profile := fmt.Sprintf(`{"status_text":%q,"status_emoji":%q`, text, emoji)
+	if expiration > 0 {
+		profile = fmt.Sprintf(`%s,"status_expiration":%d`, profile, expiration)
+	}
+	profile = profile + "}"
 	return c.do("users.profile.set", url.Values{"profile": []string{profile}})
 }
-func (c client) clearStatus() error { return c.setStatus("", "") }
+func (c client) clearStatus() error { return c.setStatus("", "", 0) }
 
 func (c client) do(method string, values url.Values) error {
 	values.Set("token", c.Token)
