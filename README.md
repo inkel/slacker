@@ -24,10 +24,16 @@ Usage of slacker:
   -clear
     	Clears your away and custom status
   -config string
-    	Which config file to use (default "~/.slack")
+    	Which config file to use (default "/Users/inkel/.slack")
   -d	Enable debug mode
   -emoji string
     	Set status emoji
+  -expires-at string
+    	Set an absolute expiration
+  -expires-in duration
+    	Set a relative expiration (e.g. 1h15m30s)
+  -online
+    	Set yourself online
   -text string
     	Set status text
 ```
