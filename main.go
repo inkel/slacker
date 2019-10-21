@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -146,18 +146,33 @@ func getTokens(file string) (map[string]string, error) {
 		return false
 	}
 
-	for {
+	scanner := bufio.NewScanner(fp)
+
+	var nline int
+
+	for scanner.Scan() {
+		nline++
+		line := strings.TrimSpace(scanner.Text())
+
+		if line == "" || strings.IndexRune(line, '#') == 0 {
+			continue
+		}
+
 		var team, token string
-		_, err := fmt.Fscanln(fp, &team, &token)
-		if err == io.EOF {
-			break
-		}
+
+		_, err := fmt.Sscan(line, &team, &token)
 		if err != nil {
-			return nil, err
+			warn("error when reading line %d: %q => %v\n", nline, line, err)
+			continue
 		}
+
 		if includeTeam(team) {
 			tokens[team] = token
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "reading standard input:", err)
 	}
 
 	if len(tokens) == 0 {
